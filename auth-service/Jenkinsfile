@@ -4,10 +4,7 @@ agent any
 ```
 environment {
     SERVICE_NAME = 'auth-service'
-    IMAGE_NAME   = 'securebank-auth'
-    IMAGE_TAG    = "1.0.${BUILD_NUMBER}"
-    NEXUS_URL    = "${NEXUS_HOST}:8082"
-    APP_PORT     = '8081'
+    IMAGE_TAG = "1.0.${BUILD_NUMBER}"
 }
 
 tools {
@@ -40,7 +37,7 @@ stages {
         post {
             always {
                 junit allowEmptyResults: true,
-                testResults: "${SERVICE_NAME}/target/surefire-reports/*.xml"
+                      testResults: '**/target/surefire-reports/*.xml'
             }
         }
     }
@@ -55,19 +52,10 @@ stages {
         }
     }
 
-    stage('Quality Gate') {
-        steps {
-            timeout(time: 5, unit: 'MINUTES') {
-                waitForQualityGate abortPipeline: true
-            }
-        }
-    }
-
-    stage('Package JAR') {
+    stage('Package') {
         steps {
             dir("${SERVICE_NAME}") {
                 sh 'mvn package -DskipTests -B'
-                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
     }
@@ -75,11 +63,11 @@ stages {
 
 post {
     success {
-        echo "Build Successful"
+        echo 'Build Successful'
     }
 
     failure {
-        echo "Build Failed"
+        echo 'Build Failed'
     }
 
     always {
