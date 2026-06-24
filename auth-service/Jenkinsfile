@@ -4,10 +4,9 @@ agent any
 ```
 environment {
     SERVICE_NAME = 'auth-service'
-    IMAGE_NAME   = 'securebank-auth'
-    IMAGE_TAG    = "1.0.${BUILD_NUMBER}"
-    NEXUS_URL    = "${NEXUS_HOST}:8082"
-    APP_PORT     = '8081'
+    IMAGE_NAME = 'securebank-auth'
+    IMAGE_TAG = "1.0.${BUILD_NUMBER}"
+    APP_PORT = '8081'
 }
 
 tools {
@@ -40,7 +39,7 @@ stages {
         post {
             always {
                 junit allowEmptyResults: true,
-                      testResults: "${SERVICE_NAME}/target/surefire-reports/*.xml"
+                      testResults: '**/target/surefire-reports/*.xml'
             }
         }
     }
@@ -49,7 +48,7 @@ stages {
         steps {
             dir("${SERVICE_NAME}") {
                 withSonarQubeEnv('SonarQube') {
-                    sh "mvn sonar:sonar -Dsonar.projectKey=securebank-auth -B"
+                    sh 'mvn sonar:sonar -Dsonar.projectKey=securebank-auth -B'
                 }
             }
         }
@@ -63,7 +62,7 @@ stages {
         }
     }
 
-    stage('Package JAR') {
+    stage('Package') {
         steps {
             dir("${SERVICE_NAME}") {
                 sh 'mvn package -DskipTests -B'
@@ -72,32 +71,10 @@ stages {
         }
     }
 
-    stage('Upload Nexus') {
-        steps {
-            dir("${SERVICE_NAME}") {
-                nexusArtifactUploader(
-                    nexusVersion: 'nexus3',
-                    protocol: 'http',
-                    nexusUrl: "${NEXUS_HOST}:8081",
-                    groupId: 'com.securebank',
-                    version: "${IMAGE_TAG}",
-                    repository: 'securebank-releases',
-                    credentialsId: 'nexus',
-                    artifacts: [[
-                        artifactId: "${SERVICE_NAME}",
-                        classifier: '',
-                        file: "target/${SERVICE_NAME}-1.0.0.jar",
-                        type: 'jar'
-                    ]]
-                )
-            }
-        }
-    }
-
     stage('Docker Build') {
         steps {
             dir("${SERVICE_NAME}") {
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest ."
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
             }
         }
     }
@@ -111,30 +88,11 @@ stages {
                     passwordVariable: 'DOCKER_PASS'
                 )
             ]) {
-                sh """
-                    echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} \$DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
-                    docker push \$DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
-                """
-            }
-        }
-    }
-
-    stage('Deploy Ansible') {
-        steps {
-            sh """
-                ansible-playbook deployment/ansible/playbooks/deploy_application.yml \
-                -i deployment/ansible/inventory/hosts.ini \
-                --extra-vars 'service_name=${SERVICE_NAME} image_name=${IMAGE_NAME}:${IMAGE_TAG} app_port=${APP_PORT}'
-            """
-        }
-    }
-
-    stage('Health Check') {
-        steps {
-            retry(5) {
-                sleep(time: 15, unit: 'SECONDS')
-                sh "curl -sf http://${APP_SERVER_1}:${APP_PORT}/actuator/health | grep UP"
+                sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    docker tag securebank-auth:${IMAGE_TAG} $DOCKER_USER/securebank-auth:${IMAGE_TAG}
+                    docker push $DOCKER_USER/securebank-auth:${IMAGE_TAG}
+                '''
             }
         }
     }
@@ -142,11 +100,11 @@ stages {
 
 post {
     success {
-        echo "SUCCESS: ${SERVICE_NAME} v${IMAGE_TAG} deployed!"
+        echo "Build Successful"
     }
 
     failure {
-        echo "FAILED: ${SERVICE_NAME} deployment failed."
+        echo "Build Failed"
     }
 
     always {
