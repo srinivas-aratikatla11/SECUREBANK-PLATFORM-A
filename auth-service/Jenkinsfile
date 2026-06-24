@@ -1,116 +1,113 @@
 pipeline {
-agent any
+    agent any
 
-```
-environment {
-    SERVICE_NAME = 'auth-service'
-    IMAGE_NAME = 'securebank-auth'
-    IMAGE_TAG = "1.0.${BUILD_NUMBER}"
-    APP_PORT = '8081'
-}
-
-tools {
-    maven 'maven-3.9'
-    jdk 'jdk21'
-}
-
-stages {
-
-    stage('Checkout') {
-        steps {
-            checkout scm
-        }
+    environment {
+        SERVICE_NAME = 'auth-service'
+        IMAGE_NAME   = 'securebank-auth'
+        IMAGE_TAG    = "1.0.${BUILD_NUMBER}"
+        APP_PORT     = '8081'
     }
 
-    stage('Compile') {
-        steps {
-            dir("${SERVICE_NAME}") {
-                sh 'mvn clean compile -B'
-            }
-        }
+    tools {
+        maven 'maven-3.9'
+        jdk 'jdk21'
     }
 
-    stage('Unit Test') {
-        steps {
-            dir("${SERVICE_NAME}") {
-                sh 'mvn test -B'
-            }
-        }
-        post {
-            always {
-                junit allowEmptyResults: true,
-                      testResults: '**/target/surefire-reports/*.xml'
-            }
-        }
-    }
+    stages {
 
-    stage('SonarQube Scan') {
-        steps {
-            dir("${SERVICE_NAME}") {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'mvn sonar:sonar -Dsonar.projectKey=securebank-auth -B'
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Compile') {
+            steps {
+                dir("${SERVICE_NAME}") {
+                    sh 'mvn clean compile -B'
+                }
+            }
+        }
+
+        stage('Unit Test') {
+            steps {
+                dir("${SERVICE_NAME}") {
+                    sh 'mvn test -B'
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true,
+                          testResults: "${SERVICE_NAME}/target/surefire-reports/*.xml"
+                }
+            }
+        }
+
+        stage('SonarQube Scan') {
+            steps {
+                dir("${SERVICE_NAME}") {
+                    withSonarQubeEnv('SonarQube') {
+                        sh 'mvn sonar:sonar -Dsonar.projectKey=securebank-auth -B'
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package JAR') {
+            steps {
+                dir("${SERVICE_NAME}") {
+                    sh 'mvn package -DskipTests -B'
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                dir("${SERVICE_NAME}") {
+                    sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                }
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockercredentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh """
+                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} \$DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push \$DOCKER_USER/${IMAGE_NAME}:${IMAGE_TAG}
+                    """
                 }
             }
         }
     }
 
-    stage('Quality Gate') {
-        steps {
-            timeout(time: 5, unit: 'MINUTES') {
-                waitForQualityGate abortPipeline: true
-            }
+    post {
+        success {
+            echo "SUCCESS: ${SERVICE_NAME} v${IMAGE_TAG} built successfully!"
+        }
+
+        failure {
+            echo "FAILED: ${SERVICE_NAME} pipeline failed."
+        }
+
+        always {
+            cleanWs()
         }
     }
-
-    stage('Package') {
-        steps {
-            dir("${SERVICE_NAME}") {
-                sh 'mvn package -DskipTests -B'
-                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-            }
-        }
-    }
-
-    stage('Docker Build') {
-        steps {
-            dir("${SERVICE_NAME}") {
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-            }
-        }
-    }
-
-    stage('Docker Push') {
-        steps {
-            withCredentials([
-                usernamePassword(
-                    credentialsId: 'dockercredentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )
-            ]) {
-                sh '''
-                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                    docker tag securebank-auth:${IMAGE_TAG} $DOCKER_USER/securebank-auth:${IMAGE_TAG}
-                    docker push $DOCKER_USER/securebank-auth:${IMAGE_TAG}
-                '''
-            }
-        }
-    }
-}
-
-post {
-    success {
-        echo "Build Successful"
-    }
-
-    failure {
-        echo "Build Failed"
-    }
-
-    always {
-        cleanWs()
-    }
-}
-```
-
 }
