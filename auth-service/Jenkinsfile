@@ -7,7 +7,7 @@ pipeline {
         NEXUS_URL    = "${NEXUS_HOST}:8082"
         APP_PORT     = '8081'
     }
-    tools { maven 'Maven-3.9'; jdk 'JDK-17' }
+    tools { maven 'Maven-3.9'; jdk 'JDK-21' }
     stages {
         stage('Checkout')   { steps { checkout scm } }
         stage('Compile')    { steps { dir("${SERVICE_NAME}") { sh 'mvn clean compile -B' } } }
